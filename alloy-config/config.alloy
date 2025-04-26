@@ -1,0 +1,80 @@
+// Logging configuration for Alloy
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// OTLP Receiver for metrics, logs, and traces
+otelcol.receiver.otlp "default" {
+  debug_metrics {
+    disable_high_cardinality_metrics = true
+  }
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Batch Processor
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.processor.transform.log_transform.input]
+    traces  = [otelcol.exporter.otlp.jaeger.input]
+  }
+}
+
+// Transform Processor for Loki (to format logs for Loki)
+otelcol.processor.transform "log_transform" {
+  log_statements {
+    context = "log"
+    statements = [
+      `set(attributes["loki.format"], "json")`,
+      `set(attributes["loki.label.service"], attributes["service.name"])`,
+    ]
+  }
+  output {
+    logs = [loki.write.loki.receiver]
+  }
+}
+
+// Loki Exporter
+loki.write "loki" {
+  forward_to = []
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// OTLP Exporter for Jaeger
+otelcol.exporter.otlp "jaeger" {
+  client {
+    endpoint = "jaeger:4317" // Jaeger's OTLP gRPC endpoint
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// Prometheus Exporter
+otelcol.exporter.prometheus "default" {
+  server {
+    http {
+      listen_addr = "0.0.0.0:8889"
+    }
+  }
+}
+
+// Optional Kafka Exporter for logs (uncomment if used)
+// otelcol.exporter.kafka "logs" {
+//   brokers = ["kafka:9092"]
+//   topic   = "otel-logs"
+//   protocol_version = "2.0.0"
+// }
